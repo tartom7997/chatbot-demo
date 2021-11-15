@@ -1,48 +1,31 @@
-import React from 'react';
-import dafaultDataset from "./dataset";
+import React, {useState, useEffect, useCallback} from 'react';
 import './assets/styles/style.css';
 import {AnswersList, Chats} from "./components/index";
 import FormDialog from './components/Forms/FormDialog';
+import {db} from './firebase/index'
 
-export default class App extends React.Component {
-  constructor(props) {
-    super(props);
-    this.state = {
-      answers: [],
-      chats: [],
-      currentId: "init",
-      dataset: dafaultDataset,
-      open: false
-    }
-    this.selectAnswer = this.selectAnswer.bind(this)
-    // Class compでの下記のような関数使用はbindが必要、それを直接return以降に渡せるようになる。毎回レンダーや関数の実行されず、負荷がかからない。
-    this.handleClose = this.handleClose.bind(this)
-    this.handleClickOpen = this.handleClickOpen.bind(this)
-  }
+const App = () => {
+  const [answers, setAnswers] = useState([]);
+  const [chats, setChats] = useState([]);
+  const [currentId, setCurrentId] = useState("init");
+  const [dataset, setDataset] = useState({});
+  const [open, setOpen] = useState(false);
 
-  displayNextQuestion = (nextQuestionID) => {
-    const chats = this.state.chats
-    chats.push({
-      text: this.state.dataset[nextQuestionID].question,
+  const  displayNextQuestion = (nextQuestionID, nextDataset) => {
+    addChats({
+      text: nextDataset.question,
       type: 'question'
     })
 
-    this.setState({
-      answers: this.state.dataset[nextQuestionID].answers,
-      chats: chats,
-      currentID: nextQuestionID
-    })
+      setAnswers(nextDataset.answers)
+      setCurrentId(nextQuestionID)
 
   }
 
-  selectAnswer = (selectedAnswer, nextQuestionID) => {
+  const  selectAnswer = (selectedAnswer, nextQuestionID) => {
     switch(true) {
-      case (nextQuestionID === 'init'):
-        setTimeout(() => this.displayNextQuestion(nextQuestionID), 500);
-        break;
-
       case (nextQuestionID === 'contact'):
-        this.handleClickOpen();
+        handleClickOpen();
         break;
 
       // 正規表現：文字列の先頭がhttpsで始まるものをtestメソッドで確認
@@ -55,53 +38,70 @@ export default class App extends React.Component {
         a.click();
         break;
       default:
-        const chats = this.state.chats;
-        // 空の配列なのでchatの中身をPushする
-        chats.push({
+        addChats({
           text: selectedAnswer,
           type: 'answer'
         })
 
-        this.setState({
-            chats: chats
-        })
-
         // 遅延表示
-        setTimeout(() => this.displayNextQuestion(nextQuestionID), 1000);
+        setTimeout(() => displayNextQuestion(nextQuestionID, dataset[nextQuestionID]), 1000);
         break;
     }
   }
 
-  handleClickOpen = () => {
-    this.setState({open: true});
-  };
-
-  handleClose = () => {
-    this.setState({open: false});
-  };
-
-  componentDidMount() {
-    const initAnswer ="";
-    this.selectAnswer(initAnswer, this.state.currentId)
+  const addChats = (chat) => {
+    setChats(prevChats => {
+      // 前回のチャットに対して、追加する。
+      return [...prevChats, chat]
+    })
   }
 
-  componentDidUpdate(prevProps, prevState, snapshot) {
+  const handleClickOpen = () => {
+    setOpen(true)
+  };
+
+  const handleClose = useCallback(() => {
+    setOpen(false)
+  }, [setOpen]);
+
+  useEffect(() => {
+    (async() => {
+      const initDataset = {};
+      // snapshotsを返り値にすべてのQuestionsを取得する。forEachでそれぞれを取り出す。
+      // awaitをするとこで、Eachでデータがすべて入るまで待ってくれる
+      await db.collection('questions').get().then(snapshots => {
+        snapshots.forEach(doc => {
+          // idはjob_offerなどの塊、データは中身
+          const id =doc.id
+          const data = doc.data()
+          // IDをKey、Valueをdataにしてオブジェクトを入れている。
+          initDataset[id] = data
+        })
+      })
+
+      setDataset(initDataset)
+      displayNextQuestion(currentId, initDataset[currentId])
+    })()
+
+  },[] )
+
+  useEffect(() => {
     const scrollArea = document.getElementById('scrollArea')
     if (scrollArea) {
       // scorollHeigtがウィンドウ全体の高さで、それを現在の表示幅に合わせるので自動スクロールされる。
       scrollArea.scrollTop = scrollArea.scrollHeight
     }
-  }
+  })
 
-  render() {
-    return (
-      <section className="c-section">
-        <div className="c-box">
-          <Chats chats={this.state.chats} />
-          <AnswersList answers={this.state.answers} select={this.selectAnswer} />
-          <FormDialog open={this.state.open} handleClose={this.handleClose} />
-        </div>
-      </section>
-    );
-  }
+  return (
+    <section className="c-section">
+      <div className="c-box">
+        <Chats chats={chats} />
+        <AnswersList answers={answers} select={selectAnswer} />
+        <FormDialog open={open} handleClose={handleClose} />
+      </div>
+    </section>
+  );
 }
+
+export default App
